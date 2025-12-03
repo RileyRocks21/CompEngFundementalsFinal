@@ -1,4 +1,4 @@
-from src.models import Package, Route, Driver, InventoryManager, Truck
+from src.models import Package, Route, Driver, InventoryManager
 from src.utils import verify_password, validate_package_id
 import math
 
@@ -8,7 +8,6 @@ class DeliverySystem:
         self.routes = {}
         self.drivers = {}
         self.managers = {}
-        self.trucks = {}
         self.current_user = None
         self.user_type = None
 
@@ -17,9 +16,6 @@ class DeliverySystem:
 
     def add_manager(self, manager):
         self.managers[manager.manager_id] = manager
-
-    def add_truck(self, truck):
-        self.trucks[truck.truck_id] = truck
 
     def add_package(self, package):
         if validate_package_id(package.package_id):
@@ -102,18 +98,77 @@ class DeliverySystem:
         route.optimized = True
         return True
 
-    def get_analytics(self):
+    def auto_create_routes(self, k):
+        max_route_weight = 100.0
+        unassigned = [p for p in self.packages.values() if p.assigned_route_id is None]
+        if len(unassigned) < k: k = len(unassigned)
+        if k < 1: return []
+
+        centroids = []
+        for i in range(k):
+            try:
+                parts = unassigned[i].label_address.split(',')
+                centroids.append((float(parts[0]), float(parts[1])))
+            except:
+                centroids.append((0.0, 0.0))
+
+        for _ in range(10):
+            clusters = [[] for _ in range(k)]
+            cluster_weights = [0.0] * k
+            
+            unassigned.sort(key=lambda p: p.weight, reverse=True)
+            
+            for p in unassigned:
+                try:
+                    parts = p.label_address.split(',')
+                    px, py = float(parts[0]), float(parts[1])
+                except:
+                    px, py = 0.0, 0.0
+                
+                valid_clusters = []
+                for i, (cx, cy) in enumerate(centroids):
+                    if cluster_weights[i] + p.weight <= max_route_weight:
+                        dist = math.sqrt((px-cx)**2 + (py-cy)**2)
+                        valid_clusters.append((dist, i))
+                
+                if valid_clusters:
+                    valid_clusters.sort(key=lambda x: x[0])
+                    best_i = valid_clusters[0][1]
+                    clusters[best_i].append(p)
+                    cluster_weights[best_i] += p.weight
+            
+            for i in range(k):
+                if clusters[i]:
+                    sx = sum(float(p.label_address.split(',')[0]) for p in clusters[i])
+                    sy = sum(float(p.label_address.split(',')[1]) for p in clusters[i])
+                    centroids[i] = (sx/len(clusters[i]), sy/len(clusters[i]))
+
+        new_routes = []
+        for i, cluster in enumerate(clusters):
+            if cluster:
+                rid = f"AR{len(self.routes)+1}_{i}"
+                self.create_route(rid, [p.package_id for p in cluster])
+                self.optimize_route(rid)
+                new_routes.append(rid)
+        return new_routes
+
+    def get_analytics_report(self):
         total_packages = len(self.packages)
         delivered = sum(1 for p in self.packages.values() if p.status == "Delivered")
         pending = total_packages - delivered
-        
         total_distance = sum(r.total_distance for r in self.routes.values())
-        active_trucks = sum(1 for t in self.trucks.values() if t.status == "In Use")
         
-        return {
-            "total_packages": total_packages,
-            "delivered_packages": delivered,
-            "pending_packages": pending,
-            "total_distance": total_distance,
-            "active_trucks": active_trucks
-        }
+        report = []
+        report.append("=== Business Analytics Dashboard ===")
+        report.append(f"Total Packages: {total_packages}")
+        report.append(f"Delivered: {delivered}")
+        report.append(f"Pending: {pending}")
+        if total_packages > 0:
+            success_rate = (delivered / total_packages) * 100
+            report.append(f"Success Rate: {success_rate:.1f}%")
+        else:
+            report.append("Success Rate: N/A")
+        
+        report.append(f"Total Fleet Distance: {total_distance:.2f} km")
+        report.append("====================================")
+        return "\n".join(report)
