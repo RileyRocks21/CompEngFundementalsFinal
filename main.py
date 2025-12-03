@@ -42,8 +42,7 @@ def driver_menu(system):
         elif choice == "2":
             pkg_id = input("Enter Package ID: ")
             status = input("Enter New Status (Delivered/Returned): ")
-            if pkg_id in system.packages:
-                system.packages[pkg_id].update_status(status)
+            if system.update_package_status(pkg_id, status):
                 print("Updated.")
             else:
                 print("Package not found.")

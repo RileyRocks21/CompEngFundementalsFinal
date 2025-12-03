@@ -1,6 +1,8 @@
 from src.models import Package, Route, Driver, InventoryManager
 from src.utils import verify_password, validate_package_id
 import math
+import csv
+import os
 
 class DeliverySystem:
     def __init__(self):
@@ -10,18 +12,47 @@ class DeliverySystem:
         self.managers = {}
         self.current_user = None
         self.user_type = None
+        self.data_file = 'data/packages.csv'
+        self.load_packages()
+
+    def load_packages(self):
+        if os.path.exists(self.data_file):
+            with open(self.data_file, 'r', newline='') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 3:
+                        pkg = Package(row[0], row[1], float(row[2]))
+                        if len(row) > 3: pkg.status = row[3]
+                        self.packages[pkg.package_id] = pkg
+
+    def save_packages(self):
+        os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
+        with open(self.data_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            for pkg in self.packages.values():
+                writer.writerow([pkg.package_id, pkg.label_address, pkg.weight, pkg.status])
+
+    def add_package(self, package):
+        if validate_package_id(package.package_id):
+            if package.package_id in self.packages:
+                return False
+            self.packages[package.package_id] = package
+            self.save_packages()
+            return True
+        return False
+
+    def update_package_status(self, package_id, new_status):
+        if package_id in self.packages:
+            self.packages[package_id].status = new_status
+            self.save_packages()
+            return True
+        return False
 
     def add_driver(self, driver):
         self.drivers[driver.driver_id] = driver
 
     def add_manager(self, manager):
         self.managers[manager.manager_id] = manager
-
-    def add_package(self, package):
-        if validate_package_id(package.package_id):
-            self.packages[package.package_id] = package
-            return True
-        return False
 
     def login(self, user_id, password):
         if user_id in self.drivers:
